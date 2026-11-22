@@ -5,6 +5,7 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
+
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const API_KEY = process.env.DATASPORTSAPI_API_KEY;
 const CHANNEL_ID = process.env.CHANNEL_ID;
@@ -31,8 +32,12 @@ async function sendTelegram(message) {
 
     console.log("TELEGRAM SUCCESS:", response.data.ok);
     return true;
+
   } catch (error) {
-    console.error("TELEGRAM ERROR:", error.response?.data || error.message);
+    console.error(
+      "TELEGRAM ERROR:",
+      error.response?.data || error.message
+    );
     return false;
   }
 }
@@ -41,7 +46,10 @@ async function testTelegram() {
   await sendTelegram(
     "🤖 <b>KALID FOOTBALL GOAL ALERT</b>\n\n" +
     "✅ Bot is online!\n" +
-    "⚽ New football monitoring system is starting!"
+    "⚽ New football monitoring system is starting!\n\n" +
+    "🇪🇹 Afaan Oromoo: Botichi hojii jalqabeera!\n" +
+    "🇪🇹 አማርኛ: ቦቱ ሥራ ጀምሯል!\n" +
+    "🇬🇧 English: The bot is now running!"
   );
 }
 
@@ -81,17 +89,36 @@ async function checkFootball() {
       if (oldScore !== score) {
         previousScores.set(id, score);
 
+        const minute =
+          match.status?.description || "Live";
+
+        const league =
+          match.league?.name || "Football";
+
         const message =
-          `🚨 <b>GOAL ALERT!</b> ⚽🔥\n\n` +
-          `🏆 ${home} vs ${away}\n\n` +
-          `⚽ <b>${home}</b> ${homeGoals} - ${awayGoals} <b>${away}</b>\n\n` +
-          `⏱️ ${match.status?.description || "Live"}\n` +
-          `🌍 ${match.league?.name || "Football"}\n\n` +
+          `🚨 <b>GOOLII GALAME! ⚽🔥</b>\n\n` +
+
+          `🇪🇹 <b>AFAAN OROMOO</b>\n` +
+          `Gooliin galame!\n\n` +
+
+          `🇪🇹 <b>አማርኛ</b>\n` +
+          `ጎል ተቆጠረ!\n\n` +
+
+          `🇬🇧 <b>ENGLISH</b>\n` +
+          `GOAL! A goal has been scored!\n\n` +
+
+          `🏆 <b>${home} vs ${away}</b>\n` +
+          `⚽ <b>${home} ${homeGoals} - ${awayGoals} ${away}</b>\n\n` +
+
+          `⏱️ ${minute}\n` +
+          `🌍 ${league}\n\n` +
+
           `📢 <b>KALID FOOTBALL GOAL ALERT</b>`;
 
         await sendTelegram(message);
       }
     }
+
   } catch (error) {
     console.error(
       "DATASPORTS API ERROR:",
@@ -108,8 +135,4 @@ app.listen(PORT, async () => {
   console.log("Kalid Football Goal Alert started!");
 
   await testTelegram();
-  await checkFootball();
-
-  // 2 minutes = 720 requests per day
-  setInterval(checkFootball, 2 * 60 * 1000);
-});
+  await checkFootball
