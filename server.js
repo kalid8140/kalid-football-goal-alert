@@ -5,15 +5,14 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
-
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const API_KEY = process.env.FOOTBALL_API_KEY;
+const API_KEY = process.env.DATASPORTSAPI_API_KEY;
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
-const API_URL = "https://v3.football.api-sports.io";
+const API_URL = "https://api.datasportsapi.com/v2/livescores";
 
 if (!BOT_TOKEN || !API_KEY || !CHANNEL_ID) {
-  console.error("ERROR: Environment variables missing!");
+  console.error("Missing environment variables!");
   process.exit(1);
 }
 
@@ -27,77 +26,51 @@ async function sendTelegram(message) {
         chat_id: CHANNEL_ID,
         text: message,
         parse_mode: "HTML"
-      },
-      { timeout: 15000 }
+      }
     );
 
     console.log("TELEGRAM SUCCESS:", response.data.ok);
     return true;
-
   } catch (error) {
-    console.error(
-      "TELEGRAM ERROR:",
-      error.response?.data || error.message
-    );
+    console.error("TELEGRAM ERROR:", error.response?.data || error.message);
     return false;
   }
 }
 
-// Test Telegram connection
 async function testTelegram() {
-  console.log("Testing Telegram connection...");
-
-  const success = await sendTelegram(
+  await sendTelegram(
     "🤖 <b>KALID FOOTBALL GOAL ALERT</b>\n\n" +
     "✅ Bot is online!\n" +
-    "⚽ Football live monitoring is starting.\n\n" +
-    "🌍 Welcome to Kalid Football Updates!"
+    "⚽ New football monitoring system is starting!"
   );
-
-  if (success) {
-    console.log("Telegram connection verified!");
-  } else {
-    console.log("Telegram connection failed!");
-  }
 }
 
-// Check live football
 async function checkFootball() {
   try {
-    console.log("Checking live matches...");
+    console.log("Checking football live scores...");
 
-    const response = await axios.get(
-      `${API_URL}/fixtures`,
-      {
-        params: { live: "all" },
-        headers: {
-          "x-apisports-key": API_KEY
-        },
-        timeout: 20000
-      }
-    );
+    const response = await axios.get(API_URL, {
+      params: { sport: "football" },
+      headers: {
+        Authorization: `Bearer ${API_KEY}`
+      },
+      timeout: 20000
+    });
 
-    if (response.data.errors &&
-        Object.keys(response.data.errors).length > 0) {
-      console.error("API ERRORS:", response.data.errors);
-      return;
-    }
+    const matches = response.data.data || [];
 
-    const matches = response.data.response || [];
-
-    console.log("Live matches found:", matches.length);
+    console.log("Live football matches:", matches.length);
 
     for (const match of matches) {
-      const id = match.fixture.id;
+      const id = match.id;
 
-      const home = match.teams.home;
-      const away = match.teams.away;
+      const home = match.home?.name || "Home";
+      const away = match.away?.name || "Away";
 
-      const homeGoals = match.goals.home ?? 0;
-      const awayGoals = match.goals.away ?? 0;
+      const homeGoals = match.homeScore?.current ?? 0;
+      const awayGoals = match.awayScore?.current ?? 0;
 
       const score = `${homeGoals}-${awayGoals}`;
-
       const oldScore = previousScores.get(id);
 
       if (oldScore === undefined) {
@@ -109,37 +82,34 @@ async function checkFootball() {
         previousScores.set(id, score);
 
         const message =
-          `🚨 <b>GOAL ALERT!</b> ⚽🚨\n\n` +
-          `🏆 ${home.name} vs ${away.name}\n\n` +
-          `⚽ <b>${home.name}</b> ${homeGoals} - ${awayGoals} <b>${away.name}</b>\n\n` +
-          `⏱️ Minute: ${match.fixture.status.elapsed ?? "N/A"}'\n` +
-          `🌍 League: ${match.league.name}\n\n` +
-          `🔥 <b>KALID FOOTBALL GOAL ALERT</b>`;
+          `🚨 <b>GOAL ALERT!</b> ⚽🔥\n\n` +
+          `🏆 ${home} vs ${away}\n\n` +
+          `⚽ <b>${home}</b> ${homeGoals} - ${awayGoals} <b>${away}</b>\n\n` +
+          `⏱️ ${match.status?.description || "Live"}\n` +
+          `🌍 ${match.league?.name || "Football"}\n\n` +
+          `📢 <b>KALID FOOTBALL GOAL ALERT</b>`;
 
         await sendTelegram(message);
       }
     }
-
   } catch (error) {
     console.error(
-      "FOOTBALL API ERROR:",
+      "DATASPORTS API ERROR:",
       error.response?.data || error.message
     );
   }
 }
 
-// Website health check
 app.get("/", (req, res) => {
   res.send("Kalid Football Goal Alert is running! ⚽");
 });
 
-// Start server
 app.listen(PORT, async () => {
   console.log("Kalid Football Goal Alert started!");
 
   await testTelegram();
   await checkFootball();
 
-  // Check every 15 minutes
-  setInterval(checkFootball, 15 * 60 * 1000);
+  // 2 minutes = 720 requests per day
+  setInterval(checkFootball, 2 * 60 * 1000);
 });
