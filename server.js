@@ -13,11 +13,21 @@ const CHANNEL_ID = process.env.CHANNEL_ID;
 const API_URL = "https://api.datasportsapi.com/v2/livescores";
 
 if (!BOT_TOKEN || !API_KEY || !CHANNEL_ID) {
-  console.error("Missing environment variables!");
+  console.error("ERROR: Environment variables are missing!");
   process.exit(1);
 }
 
 const previousScores = new Map();
+
+function escapeHTML(text) {
+  return String(text).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  })[char]);
+}
 
 async function sendTelegram(message) {
   try {
@@ -27,7 +37,8 @@ async function sendTelegram(message) {
         chat_id: CHANNEL_ID,
         text: message,
         parse_mode: "HTML"
-      }
+      },
+      { timeout: 20000 }
     );
 
     console.log("TELEGRAM SUCCESS:", response.data.ok);
@@ -43,14 +54,14 @@ async function sendTelegram(message) {
 }
 
 async function testTelegram() {
-  await sendTelegram(
+  const message =
     "🤖 <b>KALID FOOTBALL GOAL ALERT</b>\n\n" +
-    "✅ Bot is online!\n" +
-    "⚽ New football monitoring system is starting!\n\n" +
-    "🇪🇹 Afaan Oromoo: Botichi hojii jalqabeera!\n" +
-    "🇪🇹 አማርኛ: ቦቱ ሥራ ጀምሯል!\n" +
-    "🇬🇧 English: The bot is now running!"
-  );
+    "🇪🇹 <b>Afaan Oromoo:</b> Botichi hojii jalqabeera!\n\n" +
+    "🇪🇹 <b>አማርኛ:</b> ቦቱ ሥራ ጀምሯል!\n\n" +
+    "🇬🇧 <b>English:</b> The bot is now running!\n\n" +
+    "⚽ Football monitoring is starting!";
+
+  await sendTelegram(message);
 }
 
 async function checkFootball() {
@@ -65,12 +76,21 @@ async function checkFootball() {
       timeout: 20000
     });
 
-    const matches = response.data.data || [];
+    const matches = response.data?.data;
+
+    if (!Array.isArray(matches)) {
+      console.error("Unexpected API response:", response.data);
+      return;
+    }
 
     console.log("Live football matches:", matches.length);
 
     for (const match of matches) {
       const id = match.id;
+
+      if (id === undefined || id === null) {
+        continue;
+      }
 
       const home = match.home?.name || "Home";
       const away = match.away?.name || "Away";
@@ -81,39 +101,46 @@ async function checkFootball() {
       const score = `${homeGoals}-${awayGoals}`;
       const oldScore = previousScores.get(id);
 
+      // Tapha yeroo jalqabaaf argame galmeessi.
       if (oldScore === undefined) {
         previousScores.set(id, score);
         continue;
       }
 
+      // Score yoo jijjiirame goal alert ergi.
       if (oldScore !== score) {
         previousScores.set(id, score);
 
-        const minute =
-          match.status?.description || "Live";
+        const safeHome = escapeHTML(home);
+        const safeAway = escapeHTML(away);
 
-        const league =
-          match.league?.name || "Football";
+        const minute = escapeHTML(
+          match.status?.description || "Live"
+        );
+
+        const league = escapeHTML(
+          match.league?.name || "Football"
+        );
 
         const message =
-          `🚨 <b>GOOLII GALAME! ⚽🔥</b>\n\n` +
+          "🚨 <b>GOOLII GALAME! ⚽🔥</b>\n\n" +
 
-          `🇪🇹 <b>AFAAN OROMOO</b>\n` +
-          `Gooliin galame!\n\n` +
+          "🇪🇹 <b>AFAAN OROMOO</b>\n" +
+          "Gooliin galame!\n\n" +
 
-          `🇪🇹 <b>አማርኛ</b>\n` +
-          `ጎል ተቆጠረ!\n\n` +
+          "🇪🇹 <b>አማርኛ</b>\n" +
+          "ጎል ተቆጠረ!\n\n" +
 
-          `🇬🇧 <b>ENGLISH</b>\n` +
-          `GOAL! A goal has been scored!\n\n` +
+          "🇬🇧 <b>ENGLISH</b>\n" +
+          "GOAL! A goal has been scored!\n\n" +
 
-          `🏆 <b>${home} vs ${away}</b>\n` +
-          `⚽ <b>${home} ${homeGoals} - ${awayGoals} ${away}</b>\n\n` +
+          `🏆 <b>${safeHome} vs ${safeAway}</b>\n` +
+          `⚽ <b>${safeHome} ${homeGoals} - ${awayGoals} ${safeAway}</b>\n\n` +
 
           `⏱️ ${minute}\n` +
           `🌍 ${league}\n\n` +
 
-          `📢 <b>KALID FOOTBALL GOAL ALERT</b>`;
+          "📢 <b>KALID FOOTBALL GOAL ALERT</b>";
 
         await sendTelegram(message);
       }
@@ -121,18 +148,10 @@ async function checkFootball() {
 
   } catch (error) {
     console.error(
-      "DATASPORTS API ERROR:",
+      "FOOTBALL API ERROR:",
       error.response?.data || error.message
     );
   }
 }
 
-app.get("/", (req, res) => {
-  res.send("Kalid Football Goal Alert is running! ⚽");
-});
-
-app.listen(PORT, async () => {
-  console.log("Kalid Football Goal Alert started!");
-
-  await testTelegram();
-  await checkFootball
+app
