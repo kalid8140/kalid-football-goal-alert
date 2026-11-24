@@ -5,46 +5,14 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
-
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const API_KEY = process.env.DATASPORTSAPI_API_KEY;
-
 const API_URL = "https://api.datasportsapi.com/v2/livescores";
 
-const FIVE_MINUTES = 5 * 60 * 1000;
-const TWENTY_MINUTES = 20 * 60 * 1000;
+const CHECK_INTERVAL = 5 * 60 * 1000;
 
-// TELEGRAM CHANNELS
-const CHANNELS = [
-  {
-    id: "@KalidFootball",
-    username: "@KalidFootball",
-    language: "oromo"
-  },
-  {
-    id: "@KalidSportsNews",
-    username: "@KalidSportsNews",
-    language: "amharic"
-  },
-  {
-    id: "@oduu_sport01",
-    username: "@oduu_sport01",
-    language: "oromo"
-  },
-  {
-    id: "@ETC_ARSENAL",
-    username: "@ETC_ARSENAL",
-    language: "amharic"
-  },
-  {
-    id: "@arsenal_america",
-    username: "@arsenal_america",
-    language: "english"
-  }
-];
-
-// MAJOR LEAGUES
-const MAJOR_LEAGUES = [
+// LIIGOTA BEEKAMOO QOFA
+const FAMOUS_LEAGUES = [
   "premier league",
   "la liga",
   "laliga",
@@ -53,14 +21,20 @@ const MAJOR_LEAGUES = [
   "ligue 1",
   "champions league",
   "europa league",
-  "conference league",
-  "eredivisie",
-  "primeira liga",
-  "saudi pro league"
+  "conference league"
+];
+
+// CHANNELS
+const CHANNELS = [
+  { id: "@KalidFootball", username: "@KalidFootball", language: "oromo" },
+  { id: "@KalidSportsNews", username: "@KalidSportsNews", language: "amharic" },
+  { id: "@oduu_sport01", username: "@oduu_sport01", language: "oromo" },
+  { id: "@ETC_ARSENAL", username: "@ETC_ARSENAL", language: "amharic" },
+  { id: "@arsenal_america", username: "@arsenal_america", language: "english" }
 ];
 
 if (!BOT_TOKEN || !API_KEY) {
-  console.error("DOGOGGORA: Environment Variables dhabuu danda'u.");
+  console.error("Environment Variables dhabuu danda'u.");
 
   if (!BOT_TOKEN) console.error("TELEGRAM_BOT_TOKEN hin jiru.");
   if (!API_KEY) console.error("DATASPORTSAPI_API_KEY hin jiru.");
@@ -75,7 +49,6 @@ const announcedStarts = new Set();
 
 let checking = false;
 let initialized = false;
-let lastWorldwideCheck = 0;
 
 // HTML ESCAPE
 function escapeHTML(value) {
@@ -88,22 +61,14 @@ function escapeHTML(value) {
   })[char]);
 }
 
-// CHANNEL FOOTER
-function createChannelFooter(channel) {
-  return (
-    "━━━━━━━━━━━━━━\n" +
-    "📢 <b>KALID FOOTBALL</b>\n" +
-    "𝗦𝗛𝗔𝗥𝗘 ➪ " + escapeHTML(channel.username) + "\n" +
-    "━━━━━━━━━━━━━━"
-  );
-}
+// FAMOUS LEAGUES ONLY
+function isFamousLeague(match) {
+  const leagueName = String(
+    match.league?.name || ""
+  ).toLowerCase().trim();
 
-// MAJOR LEAGUE CHECK
-function isMajorLeague(match) {
-  const league = (match.league?.name || "").toLowerCase();
-
-  return MAJOR_LEAGUES.some(name =>
-    league.includes(name)
+  return FAMOUS_LEAGUES.some(name =>
+    leagueName.includes(name)
   );
 }
 
@@ -135,7 +100,7 @@ function getStatus(match) {
     .toLowerCase();
 }
 
-// CHECK IF MATCH IS LIVE
+// CHECK LIVE MATCH
 function isMatchLive(match) {
   const status = getStatus(match);
 
@@ -188,31 +153,41 @@ async function sendTelegram(channelId, message) {
   }
 }
 
+// CHANNEL FOOTER
+function channelFooter(channel) {
+  return (
+    "━━━━━━━━━━━━━━\n" +
+    "📢 <b>KALID FOOTBALL</b>\n" +
+    "𝗦𝗛𝗔𝗥𝗘 ➪ " + escapeHTML(channel.username) + "\n" +
+    "━━━━━━━━━━━━━━"
+  );
+}
+
 // STARTUP MESSAGES
-async function testTelegram() {
+async function sendStartupMessages() {
   const messages = {
     oromo:
       "🤖 <b>KALID FOOTBALL GOAL ALERT</b>\n\n" +
-      "✅ Botichi hojii jalqabeera!\n\n" +
-      "🏆 Liigota gurguddoo: Daqiiqaa 5 hunda.\n" +
-      "🌍 Taphoota addunyaa: Daqiiqaa 20 hunda.\n\n" +
-      "🔴 Taphoonni yeroo jalqaban ni beeksifamu.\n" +
-      "⚽ Gooliin yeroo galamu ni beeksifama!",
+      "✅ Botichi hojii jalqabeera!\n" +
+      "🏆 Liigota beekamoo qofa hordofa.\n" +
+      "⏱️ Daqiiqaa 5 hunda sakatta'a.\n" +
+      "🔴 Tapha yeroo jalqabu ni beeksisa.\n" +
+      "⚽ Goolii yeroo galamu ni beeksisa!",
 
     amharic:
       "🤖 <b>KALID FOOTBALL GOAL ALERT</b>\n\n" +
-      "✅ ቦቱ ስራ ጀምሯል!\n\n" +
-      "🏆 ዋና ዋና ሊጎች፡ በየ5 ደቂቃው።\n" +
-      "🌍 የዓለም አቀፍ ጨዋታዎች፡ በየ20 ደቂቃው።\n\n" +
-      "🔴 ጨዋታዎች ሲጀምሩ ይገለጻሉ።\n" +
-      "⚽ ጎል ሲቆጠር ይገለጻል!",
+      "✅ ቦቱ ስራ ጀምሯል!\n" +
+      "🏆 ታዋቂ ሊጎችን ብቻ ይከታተላል።\n" +
+      "⏱️ በየ5 ደቂቃው ይፈትሻል።\n" +
+      "🔴 ጨዋታ ሲጀምር ያሳውቃል።\n" +
+      "⚽ ጎል ሲቆጠር ያሳውቃል!",
 
     english:
       "🤖 <b>KALID FOOTBALL GOAL ALERT</b>\n\n" +
-      "✅ Bot is now online!\n\n" +
-      "🏆 Major leagues: Every 5 minutes.\n" +
-      "🌍 Worldwide matches: Every 20 minutes.\n\n" +
-      "🔴 Match start alerts enabled.\n" +
+      "✅ Bot is now online!\n" +
+      "🏆 Monitoring famous leagues only.\n" +
+      "⏱️ Checking every 5 minutes.\n" +
+      "🔴 Match-start alerts enabled.\n" +
       "⚽ Goal alerts enabled!"
   };
 
@@ -226,19 +201,9 @@ async function testTelegram() {
 
 // MATCH START MESSAGE
 function createStartMessage(match, channel) {
-  const language = channel.language;
-
-  const league = escapeHTML(
-    match.league?.name || "League"
-  );
-
-  const home = escapeHTML(
-    match.home?.name || "Home team"
-  );
-
-  const away = escapeHTML(
-    match.away?.name || "Away team"
-  );
+  const league = escapeHTML(match.league?.name || "League");
+  const home = escapeHTML(match.home?.name || "Home team");
+  const away = escapeHTML(match.away?.name || "Away team");
 
   const score = getScore(match);
 
@@ -252,25 +217,25 @@ function createStartMessage(match, channel) {
   let title;
   let startText;
   let leagueText;
-  let minuteText;
+  let timeText;
 
-  if (language === "oromo") {
+  if (channel.language === "oromo") {
     title = "🔴 <b>TAPHA JALQABAMEERA! ⚽</b>";
     startText = "🔥 Taphi kun amma jalqabameera!";
     leagueText = "Liigii";
-    minuteText = "Yeroo";
+    timeText = "Yeroo";
 
-  } else if (language === "amharic") {
+  } else if (channel.language === "amharic") {
     title = "🔴 <b>ጨዋታው ተጀምሯል! ⚽</b>";
     startText = "🔥 ጨዋታው አሁን ተጀምሯል!";
     leagueText = "ሊግ";
-    minuteText = "ደቂቃ";
+    timeText = "ደቂቃ";
 
   } else {
     title = "🔴 <b>MATCH STARTED! ⚽</b>";
     startText = "🔥 The match has kicked off!";
     leagueText = "League";
-    minuteText = "Time";
+    timeText = "Time";
   }
 
   return (
@@ -282,29 +247,19 @@ function createStartMessage(match, channel) {
     "🥅 <b>" + score.home + " - " + score.away + "</b>\n" +
     "⚽ <b>" + away + "</b>\n\n" +
 
-    "⏱️ <b>" + minuteText + ":</b> " + minute + "\n\n" +
+    "⏱️ <b>" + timeText + ":</b> " + minute + "\n\n" +
 
     startText + "\n\n" +
 
-    createChannelFooter(channel)
+    channelFooter(channel)
   );
 }
 
 // GOAL MESSAGE
 function createGoalMessage(match, score, channel) {
-  const language = channel.language;
-
-  const league = escapeHTML(
-    match.league?.name || "League"
-  );
-
-  const home = escapeHTML(
-    match.home?.name || "Home team"
-  );
-
-  const away = escapeHTML(
-    match.away?.name || "Away team"
-  );
+  const league = escapeHTML(match.league?.name || "League");
+  const home = escapeHTML(match.home?.name || "Home team");
+  const away = escapeHTML(match.away?.name || "Away team");
 
   const minute = escapeHTML(
     match.status?.minute ??
@@ -319,14 +274,14 @@ function createGoalMessage(match, score, channel) {
   let leagueText;
   let minuteText;
 
-  if (language === "oromo") {
+  if (channel.language === "oromo") {
     title = "🚨 <b>GOOLII GALAME! ⚽🔥</b>";
     goalText = "🇪🇹 Gooliin haaraan galameera!";
     followText = "🔥 Tapha kallattiin hordofaa!";
     leagueText = "Liigii";
     minuteText = "Yeroo";
 
-  } else if (language === "amharic") {
+  } else if (channel.language === "amharic") {
     title = "🚨 <b>ጎል ተቆጠረ! ⚽🔥</b>";
     goalText = "🇪🇹 አዲስ ጎል ተቆጥሯል!";
     followText = "🔥 ጨዋታውን በቀጥታ ይከታተሉ!";
@@ -357,24 +312,25 @@ function createGoalMessage(match, score, channel) {
     goalText + "\n" +
     followText + "\n\n" +
 
-    createChannelFooter(channel) + "\n\n" +
+    channelFooter(channel) + "\n\n" +
 
     "♡　　 ⎙　　 ⌲　　 🔕　　 ✉️\n" +
     "ˡᶦᵏᵉ　 ˢᵃᵛᵉ　 ˢʰᵃʳᵉ　 ᵘⁿᵐᵘᵗᵉ　 ᶜᵒᵐᵐᵉⁿᵗ"
   );
 }
 
-// SEND START ALERT TO FIVE CHANNELS
+// SEND START ALERT TO ALL CHANNELS
 async function sendStartToAllChannels(match) {
-  console.log("MATCH START ALERT:", match.id);
+  console.log("MATCH START:", match.id);
 
-  const tasks = CHANNELS.map(channel => {
-    const message = createStartMessage(match, channel);
-
-    return sendTelegram(channel.id, message);
-  });
-
-  const results = await Promise.all(tasks);
+  const results = await Promise.all(
+    CHANNELS.map(channel =>
+      sendTelegram(
+        channel.id,
+        createStartMessage(match, channel)
+      )
+    )
+  );
 
   console.log(
     "START ALERT CHANNELS:",
@@ -383,21 +339,18 @@ async function sendStartToAllChannels(match) {
   );
 }
 
-// SEND GOAL ALERT TO FIVE CHANNELS
+// SEND GOAL ALERT TO ALL CHANNELS
 async function sendGoalToAllChannels(match, score) {
   console.log("GOAL ALERT:", match.id);
 
-  const tasks = CHANNELS.map(channel => {
-    const message = createGoalMessage(
-      match,
-      score,
-      channel
-    );
-
-    return sendTelegram(channel.id, message);
-  });
-
-  const results = await Promise.all(tasks);
+  const results = await Promise.all(
+    CHANNELS.map(channel =>
+      sendTelegram(
+        channel.id,
+        createGoalMessage(match, score, channel)
+      )
+    )
+  );
 
   console.log(
     "GOAL ALERT CHANNELS:",
@@ -409,14 +362,14 @@ async function sendGoalToAllChannels(match, score) {
 // MAIN FOOTBALL CHECK
 async function checkFootball() {
   if (checking) {
-    console.log("Qorannoon taphaa duraan gaggeeffamaa jira.");
+    console.log("Previous check is still running.");
     return;
   }
 
   checking = true;
 
   try {
-    console.log("Taphoota kubbaa miilaa qorachaa jira...");
+    console.log("Checking famous leagues...");
 
     const response = await axios.get(API_URL, {
       params: {
@@ -428,14 +381,18 @@ async function checkFootball() {
       timeout: 20000
     });
 
-    const matches = response.data?.data;
+    const allMatches = response.data?.data;
 
-    if (!Array.isArray(matches)) {
-      console.error("Deebiin API sirrii miti.");
+    if (!Array.isArray(allMatches)) {
+      console.error("Invalid API response.");
       return;
     }
 
-    const now = Date.now();
+    // FAMOUS LEAGUES ONLY
+    const matches = allMatches.filter(isFamousLeague);
+
+    console.log("All API matches:", allMatches.length);
+    console.log("Famous league matches:", matches.length);
 
     // INITIAL DATA
     if (!initialized) {
@@ -449,39 +406,17 @@ async function checkFootball() {
       }
 
       initialized = true;
-      lastWorldwideCheck = now;
 
-      console.log("Bu'aan taphoota jalqabaa kuufameera.");
-      console.log("Taphoota live waliigalaa:", matches.length);
-
+      console.log("Initial scores saved.");
       return;
     }
 
-    const worldwideDue =
-      now - lastWorldwideCheck >= TWENTY_MINUTES;
-
-    let majorCount = 0;
-    let worldwideCount = 0;
-
+    // CHECK MATCHES
     for (const match of matches) {
       const id = match.id;
 
       if (id === undefined || id === null) {
         continue;
-      }
-
-      const major = isMajorLeague(match);
-
-      // MAJOR LEAGUES EVERY 5 MINUTES
-      // OTHER MATCHES EVERY 20 MINUTES
-      if (!major && !worldwideDue) {
-        continue;
-      }
-
-      if (major) {
-        majorCount++;
-      } else {
-        worldwideCount++;
       }
 
       const liveNow = isMatchLive(match);
@@ -490,7 +425,7 @@ async function checkFootball() {
       const currentScore = getScore(match);
       const oldScore = previousScores.get(id);
 
-      // NEWLY DISCOVERED MATCH
+      // NEW MATCH DISCOVERED
       if (wasLive === undefined) {
         previousStatuses.set(id, liveNow);
         previousScores.set(id, currentScore);
@@ -524,36 +459,17 @@ async function checkFootball() {
             match,
             currentScore
           );
-
-          console.log(
-            "GOAL:",
-            match.home?.name,
-            currentScore.home,
-            "-",
-            currentScore.away,
-            match.away?.name
-          );
         }
       }
 
       previousScores.set(id, currentScore);
     }
 
-    if (worldwideDue) {
-      lastWorldwideCheck = now;
-
-      console.log(
-        "Qorannoon taphoota addunyaa xumurameera."
-      );
-    }
-
-    console.log("Taphoota live waliigalaa:", matches.length);
-    console.log("Taphoota liigota gurguddoo:", majorCount);
-    console.log("Taphoota addunyaa biroo:", worldwideCount);
+    console.log("Famous league check completed.");
 
   } catch (error) {
     console.error(
-      "DOGOGGORA API:",
+      "FOOTBALL API ERROR:",
       error.response?.data || error.message
     );
 
@@ -564,7 +480,9 @@ async function checkFootball() {
 
 // WEBSITE HEALTH CHECK
 app.get("/", (req, res) => {
-  res.send("KALID FOOTBALL GOAL ALERT IS RUNNING! ⚽🔥");
+  res.send(
+    "KALID FOOTBALL GOAL ALERT IS RUNNING! Famous leagues only. ⚽"
+  );
 });
 
 // START SERVER
@@ -572,17 +490,16 @@ app.listen(PORT, () => {
   console.log("KALID FOOTBALL GOAL ALERT STARTED!");
 
   async function startBot() {
-    await testTelegram();
+    await sendStartupMessages();
 
     await checkFootball();
 
     setInterval(() => {
       checkFootball();
-    }, FIVE_MINUTES);
+    }, CHECK_INTERVAL);
 
-    console.log("Hordoffiin taphoota jalqabameera!");
-    console.log("Major leagues: Every 5 minutes.");
-    console.log("Worldwide matches: Every 20 minutes.");
+    console.log("Monitoring famous leagues only.");
+    console.log("Check interval: Every 5 minutes.");
     console.log("Match start alerts: ENABLED.");
     console.log("Goal alerts: ENABLED.");
     console.log("Telegram channels: 5.");
