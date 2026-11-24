@@ -15,14 +15,12 @@ const CHECK_INTERVAL = 5 * 60 * 1000;
 // CHANNEL SETTINGS
 // ==================================
 
-// Afaan Oromoo channels: all 7 selected teams
 const GENERAL_CHANNELS = [
   { id: "@KalidFootball", language: "om" },
   { id: "@KalidSportsNews", language: "am" },
   { id: "@oduu_sport01", language: "om" }
 ];
 
-// Arsenal-only channels
 const ARSENAL_CHANNELS = [
   { id: "@ETC_ARSENAL", language: "am" },
   { id: "@arsenal_america", language: "en" }
@@ -145,16 +143,28 @@ function getTeamName(team) {
   return normalizeName(team?.name || "");
 }
 
+function getHomeTeam(match) {
+  return match.home || match.homeTeam || match.home_team;
+}
+
+function getAwayTeam(match) {
+  return match.away || match.awayTeam || match.away_team;
+}
+
 function getHomeName(match) {
-  return getTeamName(
-    match.home || match.homeTeam || match.home_team
-  );
+  return getTeamName(getHomeTeam(match));
 }
 
 function getAwayName(match) {
-  return getTeamName(
-    match.away || match.awayTeam || match.away_team
-  );
+  return getTeamName(getAwayTeam(match));
+}
+
+function getDisplayTeamName(team, fallback) {
+  if (typeof team === "string") {
+    return team;
+  }
+
+  return team?.name || fallback;
 }
 
 function isSelectedTeam(teamName) {
@@ -162,22 +172,16 @@ function isSelectedTeam(teamName) {
 }
 
 function isSelectedMatch(match) {
-  const home = getHomeName(match);
-  const away = getAwayName(match);
-
   return (
-    isSelectedTeam(home) ||
-    isSelectedTeam(away)
+    isSelectedTeam(getHomeName(match)) ||
+    isSelectedTeam(getAwayName(match))
   );
 }
 
 function isArsenalMatch(match) {
-  const home = getHomeName(match);
-  const away = getAwayName(match);
-
   return (
-    ARSENAL_NAMES.has(home) ||
-    ARSENAL_NAMES.has(away)
+    ARSENAL_NAMES.has(getHomeName(match)) ||
+    ARSENAL_NAMES.has(getAwayName(match))
   );
 }
 
@@ -188,7 +192,7 @@ function isArsenalMatch(match) {
 function getChannelsForMatch(match) {
   const channels = [];
 
-  // All 7 selected teams go to general channels.
+  // All selected teams go to general channels.
   if (isSelectedMatch(match)) {
     channels.push(...GENERAL_CHANNELS);
   }
@@ -385,7 +389,10 @@ function getGoalLabels(language) {
     return {
       goal: "GOOLII!",
       scorer: "Taphataa goolii galche",
-      assist: "Assist"
+      assist: "Assist",
+      promotion:
+        "📢 Odeeffannoo kubbaa miilaa argachuuf channel keenya hordofaa.\n" +
+        "🔔 Hiriyoota keessaniifis share godhaa!"
     };
   }
 
@@ -393,26 +400,39 @@ function getGoalLabels(language) {
     return {
       goal: "ጎል!",
       scorer: "ጎል ያስቆጠረው",
-      assist: "አሲስት"
+      assist: "አሲስት",
+      promotion:
+        "📢 የእግር ኳስ ዜናዎችን ለማግኘት ቻናላችንን ይከታተሉ።\n" +
+        "🔔 ለጓደኞቻችሁም Share ያድርጉ!"
     };
   }
 
   return {
     goal: "GOAL!",
     scorer: "Goal scorer",
-    assist: "Assist"
+    assist: "Assist",
+    promotion:
+      "📢 Follow our channel for football news and updates.\n" +
+      "🔔 Share with your friends!"
   };
 }
 
 // ==================================
-// GOAL CAPTION
+// GOAL CAPTION WITH CHANNEL USERNAME
 // ==================================
 
-function createGoalCaption(match, event, language) {
-  const labels = getGoalLabels(language);
+function createGoalCaption(match, event, channel) {
+  const labels = getGoalLabels(channel.language);
 
-  const home = match.home?.name || "Home";
-  const away = match.away?.name || "Away";
+  const home = getDisplayTeamName(
+    getHomeTeam(match),
+    "Home"
+  );
+
+  const away = getDisplayTeamName(
+    getAwayTeam(match),
+    "Away"
+  );
 
   const player = event.player || {};
 
@@ -433,6 +453,8 @@ function createGoalCaption(match, event, language) {
 
   const assist = event.assists?.[0]?.name;
 
+  const username = channel.id;
+
   let caption =
     `⚽ <b>${labels.goal}</b>\n\n` +
     `🏆 ${escapeHTML(match.league?.name || "Football")}\n` +
@@ -445,7 +467,10 @@ function createGoalCaption(match, event, language) {
       `\n🎯 <b>${labels.assist}:</b> ${escapeHTML(assist)}`;
   }
 
-  caption += "\n\n🔥 KALID FOOTBALL GOAL ALERT";
+  caption +=
+    `\n\n${labels.promotion}` +
+    `\n\n📢 Channel: <a href="https://t.me/${username.replace("@", "")}">${escapeHTML(username)}</a>` +
+    `\n\n🔥 <b>KALID FOOTBALL GOAL ALERT</b>`;
 
   return caption.slice(0, 1000);
 }
@@ -472,7 +497,7 @@ async function sendGoalToChannels(match, event) {
     const caption = createGoalCaption(
       match,
       event,
-      channel.language
+      channel
     );
 
     let sent = false;
@@ -534,16 +559,10 @@ async function checkFootball() {
       return;
     }
 
-    // ONLY the 7 selected teams.
     const matches = allMatches.filter(isSelectedMatch);
 
-    console.log(
-      `All matches: ${allMatches.length}`
-    );
-
-    console.log(
-      `Selected team matches: ${matches.length}`
-    );
+    console.log(`All matches: ${allMatches.length}`);
+    console.log(`Selected team matches: ${matches.length}`);
 
     for (const match of matches) {
       const fixtureId = match.id;
@@ -552,13 +571,8 @@ async function checkFootball() {
 
       const currentScore = getScore(match);
 
-      // Save initial score.
       if (!previousScores.has(fixtureId)) {
-        previousScores.set(
-          fixtureId,
-          currentScore
-        );
-
+        previousScores.set(fixtureId, currentScore);
         continue;
       }
 
@@ -574,11 +588,11 @@ async function checkFootball() {
 
       console.log(
         "SCORE CHANGED:",
-        match.home?.name,
+        getDisplayTeamName(getHomeTeam(match), "Home"),
         currentScore.home,
         "-",
         currentScore.away,
-        match.away?.name
+        getDisplayTeamName(getAwayTeam(match), "Away")
       );
 
       const events = await getMatchGoals(fixtureId);
@@ -618,10 +632,7 @@ async function checkFootball() {
         }
       }
 
-      previousScores.set(
-        fixtureId,
-        currentScore
-      );
+      previousScores.set(fixtureId, currentScore);
     }
 
   } catch (error) {
@@ -660,10 +671,7 @@ async function sendStartupMessages() {
         "⚽ Following your selected teams.";
     }
 
-    await sendTelegram(
-      channel.id,
-      message
-    );
+    await sendTelegram(channel.id, message);
   }
 }
 
@@ -687,7 +695,8 @@ app.get("/health", (req, res) => {
       "Manchester City",
       "Real Madrid",
       "Barcelona"
-    ]
+    ],
+    channels: ALL_CHANNELS.map(channel => channel.id)
   });
 });
 
@@ -700,9 +709,7 @@ app.listen(PORT, async () => {
     `KALID FOOTBALL GOAL ALERT running on port ${PORT}`
   );
 
-  console.log(
-    "Monitoring only 7 selected teams."
-  );
+  console.log("Monitoring only 7 selected teams.");
 
   if (!BOT_TOKEN || !API_KEY) {
     console.error(
