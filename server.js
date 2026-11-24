@@ -16,11 +16,31 @@ const TWENTY_MINUTES = 20 * 60 * 1000;
 
 // TELEGRAM CHANNELS
 const CHANNELS = [
-  { id: "@KalidFootball", language: "oromo" },
-  { id: "@KalidSportsNews", language: "amharic" },
-  { id: "@oduu_sport01", language: "oromo" },
-  { id: "@ETC_ARSENAL", language: "amharic" },
-  { id: "@arsenal_america", language: "english" }
+  {
+    id: "@KalidFootball",
+    username: "@KalidFootball",
+    language: "oromo"
+  },
+  {
+    id: "@KalidSportsNews",
+    username: "@KalidSportsNews",
+    language: "amharic"
+  },
+  {
+    id: "@oduu_sport01",
+    username: "@oduu_sport01",
+    language: "oromo"
+  },
+  {
+    id: "@ETC_ARSENAL",
+    username: "@ETC_ARSENAL",
+    language: "amharic"
+  },
+  {
+    id: "@arsenal_america",
+    username: "@arsenal_america",
+    language: "english"
+  }
 ];
 
 // MAJOR LEAGUES
@@ -66,6 +86,16 @@ function escapeHTML(value) {
     '"': "&quot;",
     "'": "&#039;"
   })[char]);
+}
+
+// CHANNEL FOOTER
+function createChannelFooter(channel) {
+  return (
+    "━━━━━━━━━━━━━━\n" +
+    "📢 <b>KALID FOOTBALL</b>\n" +
+    "𝗦𝗛𝗔𝗥𝗘 ➪ " + escapeHTML(channel.username) + "\n" +
+    "━━━━━━━━━━━━━━"
+  );
 }
 
 // MAJOR LEAGUE CHECK
@@ -195,7 +225,9 @@ async function testTelegram() {
 }
 
 // MATCH START MESSAGE
-function createStartMessage(match, language) {
+function createStartMessage(match, channel) {
+  const language = channel.language;
+
   const league = escapeHTML(
     match.league?.name || "League"
   );
@@ -227,11 +259,13 @@ function createStartMessage(match, language) {
     startText = "🔥 Taphi kun amma jalqabameera!";
     leagueText = "Liigii";
     minuteText = "Yeroo";
+
   } else if (language === "amharic") {
     title = "🔴 <b>ጨዋታው ተጀምሯል! ⚽</b>";
     startText = "🔥 ጨዋታው አሁን ተጀምሯል!";
     leagueText = "ሊግ";
     minuteText = "ደቂቃ";
+
   } else {
     title = "🔴 <b>MATCH STARTED! ⚽</b>";
     startText = "🔥 The match has kicked off!";
@@ -252,15 +286,14 @@ function createStartMessage(match, language) {
 
     startText + "\n\n" +
 
-    "━━━━━━━━━━━━━━\n" +
-    "📢 <b>KALID FOOTBALL</b>\n" +
-    "𝗦𝗛𝗔𝗥𝗘 ➪ @KalidFootball\n" +
-    "━━━━━━━━━━━━━━"
+    createChannelFooter(channel)
   );
 }
 
 // GOAL MESSAGE
-function createGoalMessage(match, score, language) {
+function createGoalMessage(match, score, channel) {
+  const language = channel.language;
+
   const league = escapeHTML(
     match.league?.name || "League"
   );
@@ -324,10 +357,7 @@ function createGoalMessage(match, score, language) {
     goalText + "\n" +
     followText + "\n\n" +
 
-    "━━━━━━━━━━━━━━\n" +
-    "📢 <b>KALID FOOTBALL</b>\n" +
-    "𝗦𝗛𝗔𝗥𝗘 ➪ @KalidFootball\n" +
-    "━━━━━━━━━━━━━━\n\n" +
+    createChannelFooter(channel) + "\n\n" +
 
     "♡　　 ⎙　　 ⌲　　 🔕　　 ✉️\n" +
     "ˡᶦᵏᵉ　 ˢᵃᵛᵉ　 ˢʰᵃʳᵉ　 ᵘⁿᵐᵘᵗᵉ　 ᶜᵒᵐᵐᵉⁿᵗ"
@@ -339,10 +369,7 @@ async function sendStartToAllChannels(match) {
   console.log("MATCH START ALERT:", match.id);
 
   const tasks = CHANNELS.map(channel => {
-    const message = createStartMessage(
-      match,
-      channel.language
-    );
+    const message = createStartMessage(match, channel);
 
     return sendTelegram(channel.id, message);
   });
@@ -364,7 +391,7 @@ async function sendGoalToAllChannels(match, score) {
     const message = createGoalMessage(
       match,
       score,
-      channel.language
+      channel
     );
 
     return sendTelegram(channel.id, message);
