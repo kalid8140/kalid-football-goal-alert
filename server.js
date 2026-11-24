@@ -5,58 +5,27 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
-
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const API_KEY = process.env.DATASPORTSAPI_API_KEY;
 
 const BASE_URL = "https://api.datasportsapi.com/v2";
 const CHECK_INTERVAL = 5 * 60 * 1000;
 
-// ===============================
-// SETTINGS
-// ===============================
+// ==================================
+// CHANNEL SETTINGS
+// ==================================
 
-const FAMOUS_LEAGUES = [
-  "premier league",
-  "la liga",
-  "laliga",
-  "serie a",
-  "bundesliga",
-  "ligue 1",
-  "champions league",
-  "uefa champions league",
-  "europa league",
-  "uefa europa league",
-  "conference league",
-  "uefa conference league"
-];
-
-// Afaan Oromoo fi Amharic channels
+// Afaan Oromoo channels: all 7 selected teams
 const GENERAL_CHANNELS = [
-  {
-    id: "@KalidFootball",
-    language: "om"
-  },
-  {
-    id: "@KalidSportsNews",
-    language: "am"
-  },
-  {
-    id: "@oduu_sport01",
-    language: "om"
-  }
+  { id: "@KalidFootball", language: "om" },
+  { id: "@KalidSportsNews", language: "am" },
+  { id: "@oduu_sport01", language: "om" }
 ];
 
 // Arsenal-only channels
 const ARSENAL_CHANNELS = [
-  {
-    id: "@ETC_ARSENAL",
-    language: "am"
-  },
-  {
-    id: "@arsenal_america",
-    language: "en"
-  }
+  { id: "@ETC_ARSENAL", language: "am" },
+  { id: "@arsenal_america", language: "en" }
 ];
 
 const ALL_CHANNELS = [
@@ -64,9 +33,76 @@ const ALL_CHANNELS = [
   ...ARSENAL_CHANNELS
 ];
 
-// ===============================
+// ==================================
+// SELECTED TEAMS
+// ==================================
+
+function normalizeName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, "and")
+    .replace(/[.'’]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+const TEAM_ALIASES = {
+  arsenal: [
+    "arsenal",
+    "arsenal fc",
+    "arsenal football club"
+  ],
+
+  manchesterUnited: [
+    "manchester united",
+    "manchester united fc",
+    "man united",
+    "man utd",
+    "man utd fc"
+  ],
+
+  chelsea: [
+    "chelsea",
+    "chelsea fc"
+  ],
+
+  liverpool: [
+    "liverpool",
+    "liverpool fc"
+  ],
+
+  manchesterCity: [
+    "manchester city",
+    "manchester city fc",
+    "man city",
+    "man city fc"
+  ],
+
+  realMadrid: [
+    "real madrid",
+    "real madrid cf"
+  ],
+
+  barcelona: [
+    "barcelona",
+    "fc barcelona",
+    "barca"
+  ]
+};
+
+const SELECTED_TEAMS = new Set(
+  Object.values(TEAM_ALIASES)
+    .flat()
+    .map(normalizeName)
+);
+
+const ARSENAL_NAMES = new Set(
+  TEAM_ALIASES.arsenal.map(normalizeName)
+);
+
+// ==================================
 // MEMORY
-// ===============================
+// ==================================
 
 const previousScores = new Map();
 const announcedGoals = new Set();
@@ -74,9 +110,9 @@ const playerPhotoCache = new Map();
 
 let checking = false;
 
-// ===============================
+// ==================================
 // API REQUEST
-// ===============================
+// ==================================
 
 async function apiGet(path, params = {}) {
   if (!API_KEY) {
@@ -97,50 +133,67 @@ async function apiGet(path, params = {}) {
   return response.data;
 }
 
-// ===============================
-// TEXT HELPERS
-// ===============================
+// ==================================
+// TEAM HELPERS
+// ==================================
 
-function escapeHTML(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+function getTeamName(team) {
+  if (typeof team === "string") {
+    return normalizeName(team);
+  }
+
+  return normalizeName(team?.name || "");
 }
 
-function normalizeName(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+function getHomeName(match) {
+  return getTeamName(
+    match.home || match.homeTeam || match.home_team
+  );
 }
 
-// ===============================
-// MATCH FILTERS
-// ===============================
+function getAwayName(match) {
+  return getTeamName(
+    match.away || match.awayTeam || match.away_team
+  );
+}
+
+function isSelectedTeam(teamName) {
+  return SELECTED_TEAMS.has(normalizeName(teamName));
+}
+
+function isSelectedMatch(match) {
+  const home = getHomeName(match);
+  const away = getAwayName(match);
+
+  return (
+    isSelectedTeam(home) ||
+    isSelectedTeam(away)
+  );
+}
 
 function isArsenalMatch(match) {
-  const home = normalizeName(match.home?.name);
-  const away = normalizeName(match.away?.name);
+  const home = getHomeName(match);
+  const away = getAwayName(match);
 
-  return home === "arsenal" || away === "arsenal";
+  return (
+    ARSENAL_NAMES.has(home) ||
+    ARSENAL_NAMES.has(away)
+  );
 }
 
-function isFamousLeague(match) {
-  const league = normalizeName(match.league?.name);
-
-  return FAMOUS_LEAGUES.includes(league);
-}
+// ==================================
+// CHANNEL ROUTING
+// ==================================
 
 function getChannelsForMatch(match) {
   const channels = [];
 
-  // Famous league matches go to the general channels.
-  if (isFamousLeague(match)) {
+  // All 7 selected teams go to general channels.
+  if (isSelectedMatch(match)) {
     channels.push(...GENERAL_CHANNELS);
   }
 
-  // Arsenal matches go to Arsenal channels only.
+  // Arsenal matches also go to Arsenal channels.
   if (isArsenalMatch(match)) {
     channels.push(...ARSENAL_CHANNELS);
   }
@@ -148,9 +201,9 @@ function getChannelsForMatch(match) {
   return channels;
 }
 
-// ===============================
+// ==================================
 // SCORE
-// ===============================
+// ==================================
 
 function getScore(match) {
   return {
@@ -159,23 +212,32 @@ function getScore(match) {
   };
 }
 
-// ===============================
-// TELEGRAM TEXT MESSAGE
-// ===============================
+// ==================================
+// HTML HELPER
+// ==================================
 
-async function sendTelegram(chatId, text) {
+function escapeHTML(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// ==================================
+// TELEGRAM TEXT
+// ==================================
+
+async function sendTelegram(chatId, message) {
   try {
     const response = await axios.post(
       `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
       {
         chat_id: chatId,
-        text,
+        text: message,
         parse_mode: "HTML",
         disable_web_page_preview: true
       },
-      {
-        timeout: 20000
-      }
+      { timeout: 20000 }
     );
 
     return response.data?.ok === true;
@@ -191,9 +253,9 @@ async function sendTelegram(chatId, text) {
   }
 }
 
-// ===============================
+// ==================================
 // TELEGRAM PHOTO
-// ===============================
+// ==================================
 
 async function sendTelegramPhoto(chatId, photo, caption) {
   try {
@@ -205,9 +267,7 @@ async function sendTelegramPhoto(chatId, photo, caption) {
         caption,
         parse_mode: "HTML"
       },
-      {
-        timeout: 30000
-      }
+      { timeout: 30000 }
     );
 
     return response.data?.ok === true;
@@ -223,9 +283,9 @@ async function sendTelegramPhoto(chatId, photo, caption) {
   }
 }
 
-// ===============================
+// ==================================
 // PLAYER PHOTO
-// ===============================
+// ==================================
 
 async function getPlayerPhoto(player, event) {
   const playerId =
@@ -233,17 +293,14 @@ async function getPlayerPhoto(player, event) {
     event?.playerId ||
     event?.player_id;
 
-  // First try image already included in event.
   if (player?.image) {
     return player.image;
   }
 
-  // No player ID means no profile lookup.
   if (!playerId) {
     return null;
   }
 
-  // Use cached image to save API requests.
   if (playerPhotoCache.has(String(playerId))) {
     return playerPhotoCache.get(String(playerId));
   }
@@ -271,9 +328,9 @@ async function getPlayerPhoto(player, event) {
   }
 }
 
-// ===============================
+// ==================================
 // MATCH EVENTS
-// ===============================
+// ==================================
 
 async function getMatchGoals(fixtureId) {
   try {
@@ -302,9 +359,9 @@ async function getMatchGoals(fixtureId) {
   }
 }
 
-// ===============================
+// ==================================
 // GOAL IDENTIFICATION
-// ===============================
+// ==================================
 
 function getGoalKey(fixtureId, event) {
   const player = event.player || {};
@@ -319,18 +376,16 @@ function getGoalKey(fixtureId, event) {
   ].join("_");
 }
 
-// ===============================
-// LANGUAGE TEXT
-// ===============================
+// ==================================
+// LANGUAGE LABELS
+// ==================================
 
 function getGoalLabels(language) {
   if (language === "om") {
     return {
       goal: "GOOLII!",
       scorer: "Taphataa goolii galche",
-      assist: "Assist",
-      match: "Tapha",
-      league: "Liigii"
+      assist: "Assist"
     };
   }
 
@@ -338,24 +393,20 @@ function getGoalLabels(language) {
     return {
       goal: "ጎል!",
       scorer: "ጎል ያስቆጠረው",
-      assist: "አሲስት",
-      match: "ጨዋታ",
-      league: "ሊግ"
+      assist: "አሲስት"
     };
   }
 
   return {
     goal: "GOAL!",
     scorer: "Goal scorer",
-    assist: "Assist",
-    match: "Match",
-    league: "League"
+    assist: "Assist"
   };
 }
 
-// ===============================
+// ==================================
 // GOAL CAPTION
-// ===============================
+// ==================================
 
 function createGoalCaption(match, event, language) {
   const labels = getGoalLabels(language);
@@ -399,9 +450,9 @@ function createGoalCaption(match, event, language) {
   return caption.slice(0, 1000);
 }
 
-// ===============================
+// ==================================
 // SEND GOAL TO CHANNELS
-// ===============================
+// ==================================
 
 async function sendGoalToChannels(match, event) {
   const channels = getChannelsForMatch(match);
@@ -411,7 +462,6 @@ async function sendGoalToChannels(match, event) {
   }
 
   const fixtureId = match.id;
-
   const player = event.player || {};
 
   const photo = await getPlayerPhoto(player, event);
@@ -427,7 +477,6 @@ async function sendGoalToChannels(match, event) {
 
     let sent = false;
 
-    // Try photo first.
     if (photo) {
       sent = await sendTelegramPhoto(
         channel.id,
@@ -436,7 +485,6 @@ async function sendGoalToChannels(match, event) {
       );
     }
 
-    // If photo is missing or fails, send text.
     if (!sent) {
       sent = await sendTelegram(
         channel.id,
@@ -448,13 +496,13 @@ async function sendGoalToChannels(match, event) {
       atLeastOneSent = true;
 
       console.log(
-        "Goal sent:",
+        "GOAL SENT:",
         fixtureId,
         channel.id
       );
     } else {
       console.log(
-        "Goal could not be sent:",
+        "GOAL FAILED:",
         fixtureId,
         channel.id
       );
@@ -464,9 +512,9 @@ async function sendGoalToChannels(match, event) {
   return atLeastOneSent;
 }
 
-// ===============================
+// ==================================
 // CHECK FOOTBALL
-// ===============================
+// ==================================
 
 async function checkFootball() {
   if (checking) return;
@@ -476,9 +524,7 @@ async function checkFootball() {
   try {
     const response = await apiGet(
       "/livescores",
-      {
-        sport: "football"
-      }
+      { sport: "football" }
     );
 
     const allMatches = response?.data ?? [];
@@ -488,13 +534,15 @@ async function checkFootball() {
       return;
     }
 
-    // Famous leagues OR Arsenal matches.
-    const matches = allMatches.filter(match =>
-      isFamousLeague(match) || isArsenalMatch(match)
+    // ONLY the 7 selected teams.
+    const matches = allMatches.filter(isSelectedMatch);
+
+    console.log(
+      `All matches: ${allMatches.length}`
     );
 
     console.log(
-      `Checking ${matches.length} selected matches`
+      `Selected team matches: ${matches.length}`
     );
 
     for (const match of matches) {
@@ -504,8 +552,7 @@ async function checkFootball() {
 
       const currentScore = getScore(match);
 
-      // First time seeing this match:
-      // save its current score as baseline.
+      // Save initial score.
       if (!previousScores.has(fixtureId)) {
         previousScores.set(
           fixtureId,
@@ -526,7 +573,7 @@ async function checkFootball() {
       }
 
       console.log(
-        "Score changed:",
+        "SCORE CHANGED:",
         match.home?.name,
         currentScore.home,
         "-",
@@ -546,7 +593,6 @@ async function checkFootball() {
         const eventHome = Number(event.homeScore);
         const eventAway = Number(event.awayScore);
 
-        // Only announce goals that explain the new score.
         if (
           !Number.isFinite(eventHome) ||
           !Number.isFinite(eventAway)
@@ -572,7 +618,6 @@ async function checkFootball() {
         }
       }
 
-      // Update the saved score after processing events.
       previousScores.set(
         fixtureId,
         currentScore
@@ -590,9 +635,9 @@ async function checkFootball() {
   }
 }
 
-// ===============================
+// ==================================
 // STARTUP MESSAGES
-// ===============================
+// ==================================
 
 async function sendStartupMessages() {
   for (const channel of ALL_CHANNELS) {
@@ -602,17 +647,17 @@ async function sendStartupMessages() {
       message =
         "✅ <b>KALID FOOTBALL GOAL ALERT</b>\n\n" +
         "Bot keenya hojii jalqabeera!\n" +
-        "⚽ Odeeffannoo gooliiwwan yeroo qabatamaa hordofaa.";
+        "⚽ Gareewwan filataman torban hordofaa.";
     } else if (channel.language === "am") {
       message =
         "✅ <b>KALID FOOTBALL GOAL ALERT</b>\n\n" +
         "ቦቱ ስራ ጀምሯል!\n" +
-        "⚽ የጎል መረጃዎችን ይከታተሉ።";
+        "⚽ የተመረጡትን ቡድኖች ይከታተሉ።";
     } else {
       message =
         "✅ <b>KALID FOOTBALL GOAL ALERT</b>\n\n" +
         "The bot is now online!\n" +
-        "⚽ Follow live goal alerts here.";
+        "⚽ Following your selected teams.";
     }
 
     await sendTelegram(
@@ -622,9 +667,9 @@ async function sendStartupMessages() {
   }
 }
 
-// ===============================
+// ==================================
 // SERVER ROUTES
-// ===============================
+// ==================================
 
 app.get("/", (req, res) => {
   res.send("KALID FOOTBALL GOAL ALERT is running ⚽");
@@ -633,17 +678,30 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    bot: "KALID FOOTBALL GOAL ALERT"
+    bot: "KALID FOOTBALL GOAL ALERT",
+    selectedTeams: [
+      "Arsenal",
+      "Manchester United",
+      "Chelsea",
+      "Liverpool",
+      "Manchester City",
+      "Real Madrid",
+      "Barcelona"
+    ]
   });
 });
 
-// ===============================
+// ==================================
 // START SERVER
-// ===============================
+// ==================================
 
 app.listen(PORT, async () => {
   console.log(
     `KALID FOOTBALL GOAL ALERT running on port ${PORT}`
+  );
+
+  console.log(
+    "Monitoring only 7 selected teams."
   );
 
   if (!BOT_TOKEN || !API_KEY) {
